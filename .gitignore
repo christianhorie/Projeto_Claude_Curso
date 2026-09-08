@@ -1,0 +1,15 @@
+# Exportações geradas pelo próprio dashboard (não são fonte, são saída)
+Dados/nitro_consumo_alcool_*.csv
+
+# Estado local do Claude Code (sessão, locks, cache) — não faz parte do produto
+.claude/
+
+# Sistema operacional
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+*.swp
