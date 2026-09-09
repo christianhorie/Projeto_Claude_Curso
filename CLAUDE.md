@@ -14,6 +14,8 @@ Dados/drinks.csv                          fonte de teste (193 países, read-only
 Dados/nitro_brand_book_by_pomelli.pdf     brand book (está aqui, NÃO em Referencias/)
 Dados/nitro_consumo_alcool_*.csv          exportações geradas pelo próprio dash
 Dashboards/index.html                     o entregável — único arquivo de produto
+server.js                                 proxy local opcional (Node puro, zero deps)
+.env / .env.example                       chaves de API — .env NÃO é versionado
 Referencias/                              vazia
 ```
 
@@ -24,6 +26,19 @@ Não há build, lint nem suíte de testes. Para rodar, abra o arquivo:
 ```bash
 start Dashboards/index.html
 ```
+
+Chat com IA e previsão do tempo exigem o proxy local, porque as chaves ficam no
+`.env` e **nunca** podem ir para o front-end:
+
+```bash
+cp .env.example .env   # preencher GEMINI_API_KEY e OPENWEATHER_API_KEY
+node server.js         # http://localhost:4173
+```
+
+Sem servidor (`file://`) o painel continua completo; só esses dois recursos se
+desligam, com aviso na interface. Nunca introduza um `config.js` com chaves,
+nem embuta chave no HTML: se precisar de um novo serviço externo, some uma rota
+de proxy ao `server.js`.
 
 O dashboard **exige uma importação de CSV** — sem arquivo ele mostra apenas a
 tela inicial (dropzone). Não existe nenhum dado embutido além da geografia; isso
@@ -47,7 +62,8 @@ A ordem do arquivo é: `<style>` (tokens → app bar → layout → empty state 
 filtros → KPIs → chrome de gráficos → footer → FAB/modal) → markup →
 `<script>window.NITRO_GEO={…}</script>` → script principal, dividido em 16
 seções numeradas por comentário (`1 · ESTATÍSTICA`, `2 · IMPORTAÇÃO DO CSV`, …,
-`16 · BOOT / EVENTOS`). Use esses cabeçalhos para navegar: `grep -n "^   [0-9]* ·"`.
+`16 · BOOT / EVENTOS`, `17 · SERVIÇOS EXTERNOS`, `18 · CLIMA`,
+`19 · CHAT COM IA`). Use esses cabeçalhos para navegar: `grep -n "^   [0-9]* ·"`.
 
 Fluxo de dados, ponta a ponta:
 
@@ -68,6 +84,13 @@ Fluxo de dados, ponta a ponta:
    refaz o domínio quando a métrica muda.
 5. **Render** (§7–§14) — cada gráfico é uma função pura `render*(rows, …)` que
    monta string de SVG/HTML e substitui `innerHTML`. Sem lib de charting.
+6. **Serviços externos** (§17–§19) — `fetch` só contra `/api/*` na mesma
+   origem, servido por `server.js`. `aiContexto()` serializa a saída de
+   `filtered()` (com estatísticas e correlações do recorte) e é a única coisa
+   que o Gemini enxerga: o chat respeita os filtros por construção, não por
+   instrução no prompt. `renderAll()` chama `AI.sincronizar()` para manter a
+   fita de contexto fiel ao estado — ao criar um novo filtro, garanta que ele
+   apareça em `aiContexto()`.
 
 `window.NITRO_GEO` (§3) é um payload TopoJSON Natural Earth 1:110M com
 `transform`/`arcs` delta-encoded, `geometries`, `meta` e `pts` (centroides dos
@@ -102,7 +125,8 @@ bicaudal via beta incompleta (`betacf`/`gammaln`/`betai`).
 - Animações via `rAF` nunca devem ser a única fonte de um valor exibido —
   `countUp()` escreve o número final primeiro e só depois anima (rAF é
   suspenso em aba/painel oculto).
-- Atalhos de teclado: `O` importar, `1`–`4` tipo de bebida, `R` redefinir. Ao
+- Atalhos de teclado: `O` importar, `1`–`4` tipo de bebida, `R` redefinir,
+  `G` conversar com os dados. Ao
   adicionar filtro ou controle, incluí-lo também em `#btnReset` e ressincronizar
   os `aria-pressed` no DOM.
 
