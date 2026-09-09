@@ -1219,27 +1219,52 @@ const COLS = {
 };
 function mapHeader(headers) {
   const H = headers.map(h => norm(h));
-  const out = {};
+  const out = {}, usadas = new Set();
+  // Duas passadas: a correspondência exata tem prioridade e reserva a coluna;
+  // só depois o fallback por substring disputa as colunas que sobraram. Sem
+  // isso, um cabeçalho como "total_vinho" seria atribuído a wine e a total ao
+  // mesmo tempo, duplicando a coluna em dois campos sem nenhum aviso.
   for (const field in COLS) {
     let idx = -1;
-    for (const alias of COLS[field]) { const i = H.indexOf(alias); if (i > -1) { idx = i; break; } }
-    if (idx < 0) for (const alias of COLS[field]) { const i = H.findIndex(h => h.includes(alias)); if (i > -1) { idx = i; break; } }
+    for (const alias of COLS[field]) { const i = H.indexOf(alias); if (i > -1 && !usadas.has(i)) { idx = i; break; } }
     out[field] = idx;
+    if (idx > -1) usadas.add(idx);
+  }
+  for (const field in COLS) {
+    if (out[field] > -1) continue;
+    let idx = -1;
+    for (const alias of COLS[field]) { const i = H.findIndex((h, j) => !usadas.has(j) && h.includes(alias)); if (i > -1) { idx = i; break; } }
+    out[field] = idx;
+    if (idx > -1) usadas.add(idx);
   }
   return out;
 }
+// Contador de valores lidos como milhar en-US ("1,234"); reiniciado a cada
+// importação e reportado em `problems`, porque a leitura é ambígua.
+let milharAmbiguo = 0;
+const MILHAR_ENUS = /^-?\d{1,3}(,\d{3})+$/;
 const toNum = v => {
   if (v == null) return NaN;
   let s = String(v).trim().replace(/\s/g, '');
   if (!s) return NaN;
-  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-  else if (s.includes(',')) s = s.replace(',', '.');
+  if (s.includes(',') && s.includes('.')) {
+    // Com os dois separadores, o decimal é o que aparece por último.
+    s = s.lastIndexOf(',') > s.lastIndexOf('.')
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '');
+  } else if (s.includes(',')) {
+    // Vírgula isolada: decimal pt-BR, exceto no padrão de milhar en-US
+    // ("1,234" / "1,234,567"), que antes virava 1.234 — mil vezes menor.
+    if (MILHAR_ENUS.test(s)) { milharAmbiguo++; s = s.replace(/,/g, ''); }
+    else s = s.replace(',', '.');
+  }
   const n = Number(s);
   return isFinite(n) ? n : NaN;
 };
 
 function ingest(text, fileName) {
   const problems = [];
+  milharAmbiguo = 0;
   text = text.replace(/^\uFEFF/, '');
   const firstLine = text.split(/\r?\n/, 1)[0] || '';
   const rows = parseCSV(text, sniffDelim(firstLine));
@@ -1279,6 +1304,7 @@ function ingest(text, fileName) {
   }
   if (!out.length) return { problems: ['Nenhuma linha numérica válida foi encontrada.'] };
   if (skipped) problems.push(skipped + ' linha(s) ignorada(s) por estarem incompletas ou duplicadas.');
+  if (milharAmbiguo) problems.push(milharAmbiguo + ' valor(es) no formato "1,234" foram lidos como separador de milhar (padrão en-US). Se o arquivo usa vírgula decimal (pt-BR), confira esses números.');
   const unmapped = out.filter(r => !r.id).length;
   if (unmapped) problems.push(unmapped + ' país(es) sem correspondência geográfica — presentes nas estatísticas e na tabela, ausentes do mapa.');
   return { rows: out, problems, file: { name: fileName, n: out.length, at: new Date() } };
