@@ -1254,8 +1254,8 @@ function ingest(text, fileName) {
     ] };
   }
 
-  const out = [], seen = new Set();
-  let skipped = 0;
+  const out = [], seen = new Map();
+  let skipped = 0, repetidos = 0;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const name = String(r[map.country] ?? '').trim();
@@ -1263,9 +1263,14 @@ function ingest(text, fileName) {
     const beer = toNum(r[map.beer]), spirit = toNum(r[map.spirit]), wine = toNum(r[map.wine]), total = toNum(r[map.total]);
     if (![beer, spirit, wine, total].every(isFinite)) { skipped++; continue; }
     const key = norm(name);
-    if (seen.has(key)) { skipped++; continue; }
-    seen.add(key);
     const id = GEO.index[key] || null;
+    // Deduplicação pelo id geográfico resolvido, não pela grafia do CSV: várias
+    // grafias apontam para o mesmo país ("Congo"/"Republic of the Congo",
+    // "Myanmar"/"Burma"). Pela grafia, as duas linhas passavam e o país era
+    // contado em dobro nos KPIs enquanto o mapa exibia só uma delas.
+    const chave = id ? 'id:' + id : 'nome:' + key;
+    if (seen.has(chave)) { repetidos++; seen.get(chave).push(name); continue; }
+    seen.set(chave, [name]);
     const meta = id ? GEO.meta[id] : null;
     out.push({
       country: name, id,
@@ -1278,7 +1283,12 @@ function ingest(text, fileName) {
     });
   }
   if (!out.length) return { problems: ['Nenhuma linha numérica válida foi encontrada.'] };
-  if (skipped) problems.push(skipped + ' linha(s) ignorada(s) por estarem incompletas ou duplicadas.');
+  if (skipped) problems.push(skipped + ' linha(s) ignorada(s) por estarem incompletas.');
+  if (repetidos) {
+    const exemplos = [...seen.values()].filter(g => g.length > 1).map(g => [...new Set(g)].join(' = ')).slice(0, 5);
+    problems.push(repetidos + ' linha(s) descartada(s) por repetir país já presente no arquivo — só o primeiro valor de cada país foi mantido' +
+      (exemplos.length ? ': ' + exemplos.join(' · ') + (repetidos > exemplos.length ? ' …' : '') : '') + '.');
+  }
   const unmapped = out.filter(r => !r.id).length;
   if (unmapped) problems.push(unmapped + ' país(es) sem correspondência geográfica — presentes nas estatísticas e na tabela, ausentes do mapa.');
   return { rows: out, problems, file: { name: fileName, n: out.length, at: new Date() } };
