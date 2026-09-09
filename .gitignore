@@ -13,3 +13,9 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Segredos — NUNCA versionar.
+# Padrão amplo de propósito: pega .env, .env.local, ".env - Copia" e afins.
+# Só o modelo sem valores volta para o versionamento.
+.env*
+!.env.example
